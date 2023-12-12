@@ -8,7 +8,7 @@ install specifically python 3.10 and pip
 
 ### Step 2:
 install some packages
-'''python -m venv environment'''
+```python -m venv environment```
 in windows:
-'''./environment/Scripts/activate'''
-'''pip install pandas numpy backtesting MetaTrader5 matplotlib neat'''
+```./environment/Scripts/activate```
+```pip install pandas numpy backtesting MetaTrader5 matplotlib neat```
