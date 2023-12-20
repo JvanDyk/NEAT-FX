@@ -79,7 +79,7 @@ class Strat(Strategy):
 
 
 
-        open, high, low, close = self.data.Opem, self.data.High, self.data.Low, self.data.Close
+        open, high, low, close = self.data.Open, self.data.High, self.data.Low, self.data.Close
         current_time = self.data.index[-1]
         volume = self.data.Volume
 
