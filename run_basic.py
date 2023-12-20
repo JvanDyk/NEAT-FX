@@ -1,5 +1,6 @@
 from sklearn.model_selection import train_test_split
 from sklearn.neighbors import KNeighborsClassifier
+from shared.basic_strategy import SmaCross, SmaCrossBasic
 from shared.machine_learning_strategy import BBANDS, MLTrainOnceStrategy, MLWalkForwardStrategy, get_clean_Xy
 from operator import truediv
 import MetaTrader5 as mt5
@@ -50,62 +51,14 @@ data.dropna(inplace=True)
 # Rename columns
 data.rename(columns={'open': 'Open', 'high': 'High', 'low': 'Low', 'close': 'Close', 'tick_volume': 'Volume'}, inplace=True)
 
-
-close = data.Close.values
-sma10 = SMA(data.Close, 10)
-sma20 = SMA(data.Close, 20)
-sma50 = SMA(data.Close, 50)
-sma100 = SMA(data.Close, 100)
-upper, lower = BBANDS(data, 20, 2)
-
-# Design matrix / independent features:
-
-# Price-derived features
-data['X_SMA10'] = (close - sma10) / close
-data['X_SMA20'] = (close - sma20) / close
-data['X_SMA50'] = (close - sma50) / close
-data['X_SMA100'] = (close - sma100) / close
-
-data['X_DELTA_SMA10'] = (sma10 - sma20) / close
-data['X_DELTA_SMA20'] = (sma20 - sma50) / close
-data['X_DELTA_SMA50'] = (sma50 - sma100) / close
-
-# Indicator features
-data['X_MOM'] = data.Close.pct_change(periods=2)
-data['X_BB_upper'] = (upper - close) / close
-data['X_BB_lower'] = (lower - close) / close
-data['X_BB_width'] = (upper - lower) / close
-data['X_Sentiment'] = ~data.index.to_series().between('2017-09-27', '2017-12-14')
-
-# Some datetime features for good measure
-data['X_day'] = data.index.dayofweek
-data['X_hour'] = data.index.hour
-
-data = data.dropna().astype(float)
-
-
-X, y = get_clean_Xy(data)
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=.5, random_state=0)
-
-clf = KNeighborsClassifier(7)  # Model the output based on 7 "nearest" examples
-clf.fit(X_train, y_train)
-
-y_pred = clf.predict(X_test)
-
-_ = pd.DataFrame({'y_true': y_test, 'y_pred': y_pred}).plot(figsize=(15, 2), alpha=.7)
-print('Classification accuracy: ', np.mean(y_test == y_pred))
-
-
-
-bt = Backtest(data, MLTrainOnceStrategy, cash=500, commission=.002, margin=.05)
+bt = Backtest(data, SmaCrossBasic)
 stats = bt.run()
 bt.plot()
 print(stats)
 
+stats = bt.optimize(n1=range(5, 30, 5),
+                    n2=range(10, 70, 5),
+                    maximize='Equity Final [$]',
+                    constraint=lambda param: param.n1 < param.n2)
 
-
-bt = Backtest(data, MLWalkForwardStrategy, cash=500, commission=.002, margin=.05)
-stats = bt.run()
-bt.plot()
 print(stats)
-
