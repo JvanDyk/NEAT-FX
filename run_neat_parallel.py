@@ -1,4 +1,5 @@
-from shared.neat_strategy_buy_sell_default import Strat
+import multiprocessing
+from shared.neat_strategy_buy_sell import Strat
 import neat
 import multiprocessing
 from datetime import datetime
@@ -35,7 +36,7 @@ SERVER_NAME = "Demo" # Replace with your broker servername
 SYMBOL = "EURUSD" # Replace with symbol data trying to fetch from server
 
 
-TIMEFRAME = mt5.TIMEFRAME_M30 # The timeframe
+TIMEFRAME = mt5.TIMEFRAME_M1 # The timeframe
 START_POS = 0 # Starting position of the data from the present to the past
 COUNT = 1000 # number of candle sticks / bars / rates
 
@@ -45,7 +46,6 @@ if login_result:
 else:
     sys.exit("Login failed")
     quit()
-
 # Download
 rates = mt5.copy_rates_from_pos(SYMBOL, TIMEFRAME, START_POS, COUNT)
 
@@ -72,37 +72,40 @@ BACKTESTS = []
 NETS = []
 GENOMES = []
 
- # Simulate traders <- eval_genomes runs the tests for each genome
-def eval_genomes(genomes, config):
-    global GENOMES, NETS, BACKTESTS, df
+def eval_genome(genome, config):
+    global df
+    # Init
+    genome.fitness = 0
 
-    for genome_id, genome in genomes:
-        genome.fitness = 0
+    # FeedForward
+    net = FeedForwardNetwork.create(genome, config)
 
-        # Create Network
-        net = neat.nn.FeedForwardNetwork.create(genome, config)
-        #net = neat.nn.RecurrentNetwork.create(genome, config)
-        #net = neat.ctrnn.CTRNN.create(genome, config, 0.01)
+    # CTRNN
+    #net = neat.ctrnn.CTRNN.create(genome, config, 0.01)
 
-        # Runs Network on Backtesting environment and adjust genomes fitness
+    # Recurrent
+    #net = RecurrentNetwork.create(genome, config)
+
+    data = df
+    runsPerNet = 2
+    fitnesses = []
+
+    for runs in range(runsPerNet):
+
         backTest = Backtest(df, Strat, cash=500, commission=.002, margin=.05, trade_on_close=False, exclusive_orders=False, hedging=True)
         stats = backTest.run(_genome=genome, _net=net)
-        print(stats)
+        fitnesses.append(genome.fitness)
 
-        # Track each genome
-        BACKTESTS.append(stats)
-        NETS.append(net)
-        GENOMES.append(genome)
+    BACKTESTS.append(stats)
+    NETS.append(net)
+    GENOMES.append(genome)
 
-    # Remove genomes that are unfit
-    for i, g in enumerate(genomes):
-        if(g[1].fitness <= 0):
-            genomes.pop(i)
+    print("Returns: ", stats.values[6])
 
-# Runs the population of genomes against the backtest
+    return min(fitnesses)
+
 def run(config_path):
-
-    # Setup configuration from shared/neat_strategy
+    global pop
     config = neat.config.Config(
         neat.DefaultGenome,
         neat.DefaultReproduction,
@@ -112,38 +115,43 @@ def run(config_path):
     )
 
     pop = neat.Population(config)
-    pop.add_reporter(neat.StdOutReporter(True))
     stats = neat.StatisticsReporter()
     pop.add_reporter(stats)
-
-    # Creates checkpoint files of the population
-    pop.add_reporter(neat.Checkpointer(5))
+    pop.add_reporter(neat.StdOutReporter(True))
 
     # Start running the simulation
-    winner = pop.run(eval_genomes, 10) # run the simulation for X amount of Generations for populations -> results in generation mutation
+    pe = neat.ParallelEvaluator(multiprocessing.cpu_count(), eval_genome, timeout=None)
 
-    # Show the performance of the winner
-    print(winner)
-    stats.save()
+    winner = pop.run(pe.evaluate, 50)
+
+    ####################
+    # Test final result
+    ####################
+
+    # Feedforward
     winner_net = neat.nn.FeedForwardNetwork.create(winner, config)
-    #winner_net = neat.nn.RecurrentNetwork.create(genome, config)
-    #winner_net = neat.ctrnn.CTRNN.create(genome, config, 0.01)
+    # CTRNN
+    #winner_net = neat.ctrnn.CTRNN.create(winner, config, 0.01)
+    # Recurrent
+    #winner_net = RecurrentNetwork.create(winner, config)
 
-    backTest = Backtest(df, Strat, cash=500, commission=.002, margin=.05, trade_on_close=False, exclusive_orders=False, hedging=True)
+
+    backTest =Backtest(df, Strat, cash=500, commission=.002, margin=.05, trade_on_close=False, exclusive_orders=False, hedging=True)
     stats = backTest.run(_genome=winner, _net=winner_net)
+
     backTest.plot()
     print(stats)
 
-# Starts the program
+
 if __name__ == '__main__':
     local_dir = os.path.dirname(__file__)
     config_path = os.path.join(local_dir, NEAT_CONFIG_PATH)
 
     run(config_path)
 
-# Use for manual save
 def save_checkpoint(config, population, species_set, generation):
     """ Save the current simulation state. """
+
     with gzip.open("winner", 'w', compresslevel=5) as f:
         data = (generation, config, population, species_set, random.getstate())
         pickle.dump(data, f, protocol=pickle.HIGHEST_PROTOCOL)
